@@ -1,15 +1,21 @@
 {% extends "layout.html" %}
 {% block content %}
+    {# `posts` are Post rows from the database (see home() in main.py), not dicts:
+       - post.author is the User object (via backref='author'), so we show .username
+       - post.date_posted is a datetime, so we format it for display #}
     {% for post in posts %}
         <article class="media content-section">
           <div class="media-body">
             <div class="article-metadata">
-              <a class="mr-2" href="#">{{ post.author }}</a>
-              <small class="text-muted">{{ post.date_posted }}</small>
+              <a class="mr-2" href="#">{{ post.author.username }}</a>
+              <small class="text-muted">{{ post.date_posted.strftime('%B %d, %Y') }}</small>
             </div>
             <h2><a class="article-title" href="#">{{ post.title }}</a></h2>
             <p class="article-content">{{ post.content }}</p>
           </div>
         </article>
+    {% else %}
+        {# Jinja's for-else: shown when the database has no posts yet. #}
+        <p class="text-muted">No posts yet.</p>
     {% endfor %}
 {% endblock content %}

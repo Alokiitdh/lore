@@ -1,0 +1,9 @@
+{% extends "layout.html" %}
+{# Only reachable when logged in (@login_required on the /account route),
+   so current_user is always a real User here. #}
+{% block content %}
+  <div class="content-section">
+    <h2>{{ current_user.username }}</h2>
+    <p class="text-secondary">{{ current_user.email }}</p>
+  </div>
+{% endblock content %}
