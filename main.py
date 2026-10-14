@@ -65,8 +65,15 @@ def register():
         user = User(username=form.username.data, email=form.email.data, password=hashed_password)
         db.session.add(user)
         db.session.commit()
-        flash('Your account has been created! You can now log in.', 'success')
-        return redirect(url_for('login'))
+
+        # The account was just created with credentials the user typed a
+        # moment ago, so asking them to log in again adds friction without
+        # adding security. Start their session immediately instead.
+        # (If we add email verification later, this is where we'd redirect
+        # to a "check your inbox" page instead.)
+        login_user(user)
+        flash(f'Welcome, {user.username}! Your account has been created.', 'success')
+        return redirect(url_for('home'))
     return render_template('register.html', title='Register', form=form)
 
 @app.route('/login', methods=['GET', 'POST'])
