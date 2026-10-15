@@ -85,14 +85,28 @@ def file_too_large(error):
 # ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
+POSTS_PER_PAGE = 8
+
 @app.route('/')
 @app.route('/home')
 def home():
-    # Posts now come from the database instead of a hard-coded list.
-    # Newest first, like a typical blog feed.
-    posts = db.session.execute(
-        db.select(Post).order_by(Post.date_posted.desc())
-    ).scalars().all()
+    # Only one page of posts is loaded, newest first. db.paginate adds
+    # LIMIT/OFFSET to the query (plus a COUNT for the page total), so page 1
+    # and page 10,000 cost the same no matter how many posts exist.
+    # type=int makes ?page=abc fall back to page 1.
+    page = request.args.get('page', 1, type=int)
+    posts = db.paginate(
+        db.select(Post)
+          # Load each post's author in the same query; otherwise post.author in
+          # the template runs one extra query per post (the "N+1" problem).
+          .options(db.joinedload(Post.author))
+          .order_by(Post.date_posted.desc()),
+        page=page, per_page=POSTS_PER_PAGE,
+        error_out=False,   # don't 404 on bad page numbers; handled just below
+    )
+    # A page past the end (e.g. an old bookmark) goes to the last real page.
+    if posts.pages and page > posts.pages:
+        return redirect(url_for('home', page=posts.pages))
     return render_template('home.html', posts=posts)
 
 @app.route('/about')
