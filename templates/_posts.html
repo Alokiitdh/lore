@@ -1,0 +1,60 @@
+{# Shared pieces for any page that lists posts (home.html, user_posts.html).
+   Import with: {% from "_posts.html" import render_posts, render_pagination %} #}
+
+{# `posts` is a Pagination object from db.paginate(); posts.items holds only
+   this page's Post rows:
+   - post.author is the User who wrote it, so we show .username and their avatar
+   - post.date_posted is a datetime, so we format it for display #}
+{% macro render_posts(posts) %}
+    {% for post in posts.items %}
+        {% set author_url = url_for('user_posts', username=post.author.username) %}
+        <article class="media content-section">
+          {# avatar_url() is defined in main.py; it falls back to the blank-circle default. #}
+          <a href="{{ author_url }}">
+            <img class="rounded-circle article-img" src="{{ avatar_url(post.author) }}" alt="{{ post.author.username }}">
+          </a>
+          <div class="media-body">
+            <div class="article-metadata">
+              <a class="mr-2" href="{{ author_url }}">{{ post.author.username }}</a>
+              <small class="text-muted">{{ post.date_posted.strftime('%B %d, %Y') }}</small>
+            </div>
+            <h2><a class="article-title" href="#">{{ post.title }}</a></h2>
+            <p class="article-content">{{ post.content }}</p>
+          </div>
+        </article>
+    {% else %}
+        {# Jinja's for-else: shown when there are no posts. #}
+        <p class="text-muted">No posts yet.</p>
+    {% endfor %}
+{% endmacro %}
+
+{# Prev / page numbers / Next bar. `endpoint` is the route to link to, and any
+   extra keyword arguments are passed to url_for, e.g.
+   render_pagination(posts, 'user_posts', username=user.username)
+   gives links like /user/<username>?page=2. #}
+{% macro render_pagination(posts, endpoint) %}
+    {% if posts.pages > 1 %}
+      <nav aria-label="Post pages">
+        <ul class="pagination justify-content-center flex-wrap">
+          <li class="page-item {{ 'disabled' if not posts.has_prev }}">
+            <a class="page-link" href="{{ url_for(endpoint, page=posts.prev_num, **kwargs) if posts.has_prev else '#' }}">&laquo; Prev</a>
+          </li>
+          {# iter_pages yields the first/last pages and those around the current
+             one, and None where pages are skipped, e.g. 1 … 8 9 10 11 12 … 100 #}
+          {% for page_num in posts.iter_pages(left_edge=1, right_edge=1, left_current=2, right_current=2) %}
+            {% if page_num is none %}
+              <li class="page-item disabled"><span class="page-link">&hellip;</span></li>
+            {% elif page_num == posts.page %}
+              <li class="page-item active" aria-current="page"><span class="page-link">{{ page_num }}</span></li>
+            {% else %}
+              <li class="page-item"><a class="page-link" href="{{ url_for(endpoint, page=page_num, **kwargs) }}">{{ page_num }}</a></li>
+            {% endif %}
+          {% endfor %}
+          <li class="page-item {{ 'disabled' if not posts.has_next }}">
+            <a class="page-link" href="{{ url_for(endpoint, page=posts.next_num, **kwargs) if posts.has_next else '#' }}">Next &raquo;</a>
+          </li>
+        </ul>
+        <p class="text-center text-muted small">Page {{ posts.page }} of {{ posts.pages }}</p>
+      </nav>
+    {% endif %}
+{% endmacro %}
