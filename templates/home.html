@@ -1,9 +1,10 @@
 {% extends "layout.html" %}
 {% block content %}
-    {# `posts` are Post rows from the database (see home() in main.py), not dicts:
+    {# `posts` is a Pagination object from db.paginate() (see home() in main.py).
+       posts.items holds only this page's Post rows:
        - post.author is the User object (via backref='author'), so we show .username
        - post.date_posted is a datetime, so we format it for display #}
-    {% for post in posts %}
+    {% for post in posts.items %}
         <article class="media content-section">
           {# avatar_url() is defined in main.py; it falls back to the blank-circle default. #}
           <img class="rounded-circle article-img" src="{{ avatar_url(post.author) }}" alt="{{ post.author.username }}">
@@ -17,7 +18,32 @@
           </div>
         </article>
     {% else %}
-        {# Jinja's for-else: shown when the database has no posts yet. #}
+        {# Jinja's for-else: shown when there are no posts (or the page is past the end). #}
         <p class="text-muted">No posts yet.</p>
     {% endfor %}
+
+    {% if posts.pages > 1 %}
+      <nav aria-label="Post pages">
+        <ul class="pagination justify-content-center flex-wrap">
+          <li class="page-item {{ 'disabled' if not posts.has_prev }}">
+            <a class="page-link" href="{{ url_for('home', page=posts.prev_num) if posts.has_prev else '#' }}">&laquo; Prev</a>
+          </li>
+          {# iter_pages yields the first/last pages and those around the current
+             one, and None where pages are skipped, e.g. 1 … 8 9 10 11 12 … 100 #}
+          {% for page_num in posts.iter_pages(left_edge=1, right_edge=1, left_current=2, right_current=2) %}
+            {% if page_num is none %}
+              <li class="page-item disabled"><span class="page-link">&hellip;</span></li>
+            {% elif page_num == posts.page %}
+              <li class="page-item active" aria-current="page"><span class="page-link">{{ page_num }}</span></li>
+            {% else %}
+              <li class="page-item"><a class="page-link" href="{{ url_for('home', page=page_num) }}">{{ page_num }}</a></li>
+            {% endif %}
+          {% endfor %}
+          <li class="page-item {{ 'disabled' if not posts.has_next }}">
+            <a class="page-link" href="{{ url_for('home', page=posts.next_num) if posts.has_next else '#' }}">Next &raquo;</a>
+          </li>
+        </ul>
+        <p class="text-center text-muted small">Page {{ posts.page }} of {{ posts.pages }}</p>
+      </nav>
+    {% endif %}
 {% endblock content %}

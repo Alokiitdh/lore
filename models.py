@@ -22,9 +22,9 @@ class User(db.Model, UserMixin):
     # Stores the password *hash*, not the password. Hashes from
     # werkzeug's generate_password_hash are ~160 chars, hence 255.
     password = db.Column(db.String(255), nullable = False)
-    # backref='author' adds a `post.author` attribute on every Post,
-    # which is how home.html shows `post.author.username`.
-    posts = db.relationship('Post', backref = 'author', lazy=True)
+    # The two sides of the User <-> Post link: user.posts and post.author
+    # (defined on Post below). back_populates keeps them in sync.
+    posts = db.relationship('Post', back_populates = 'author', lazy=True)
 
     # What you see when printing a User (handy in the shell/debugger).
     # The password hash is deliberately left out.
@@ -35,12 +35,17 @@ class Post(db.Model):
     id = db.Column(db.Integer, primary_key = True)
     title = db.Column(db.String(100), nullable = False)
     # A lambda so the time is taken when each post is created, not once at import.
-    date_posted = db.Column(db.DateTime, nullable=False, default = lambda: datetime.now(timezone.utc))
+    # index=True: the home feed sorts by this column, so an index keeps that fast with many posts.
+    date_posted = db.Column(db.DateTime, nullable=False, index=True, default = lambda: datetime.now(timezone.utc))
     # Text (unlimited length) rather than String, since blog posts can be long.
     content = db.Column(db.Text, nullable = False )
     # Foreign key: stores the id of the user who wrote the post. 'user.id' is
     # the *table* name (lowercase), not the User class.
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable = False)
+    # `post.author` is the User who wrote it (home.html shows post.author.username).
+    # Declared here rather than via backref so Post.author exists straight away,
+    # which joinedload(Post.author) in main.py needs.
+    author = db.relationship('User', back_populates = 'posts')
 
     def __repr__(self):
         return f'Post({self.title}, {self.date_posted})'
