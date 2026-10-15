@@ -1,8 +1,15 @@
 {% extends "layout.html" %}
 {% block content %}
     <div class="content-section">
+        {# action="" posts back to the same URL (/register), where the route
+           runs form.validate_on_submit(). #}
         <form method="POST" action="">
+            {# Renders the hidden CSRF token. Without it every submit fails
+               validation silently. #}
             {{ form.hidden_tag() }}
+            {# Each field follows the same pattern: if validation failed, add
+               Bootstrap's is-invalid class (red border) and list the errors
+               below it; otherwise render the plain input. #}
             <fieldset class="form-group">
                 <legend class="border-bottom mb-4">Join Today</legend>
                 <div class="form-group">

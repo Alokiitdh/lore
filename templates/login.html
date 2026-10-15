@@ -1,8 +1,13 @@
 {% extends "layout.html" %}
 {% block content %}
     <div class="content-section">
+        {# action="" posts back to the same URL, keeping any ?next= in it so
+           the login route can send the user back where they came from. #}
         <form method="POST" action="">
+            {# Hidden CSRF token; required for validate_on_submit() to pass. #}
             {{ form.hidden_tag() }}
+            {# Same error-display pattern as register.html. Wrong-password
+               errors are not shown here; those come as a flash message. #}
             <fieldset class="form-group">
                 <legend class="border-bottom mb-4">Log In</legend>
                 <div class="form-group">
@@ -39,6 +44,7 @@
             <div class="form-group">
                 {{ form.submit(class="btn btn-outline-info") }}
             </div>
+            {# Placeholder: password reset isn't built yet. #}
             <small class="text-muted ml-2">
                 <a href="#">Forgot Password?</a>
             </small>

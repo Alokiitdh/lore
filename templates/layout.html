@@ -8,8 +8,11 @@
     <!-- Bootstrap CSS -->
     <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/css/bootstrap.min.css" integrity="sha384-Gn5384xqQ1aoWXA+058RXPxPg6fy4IWvTNh0E263XmFcJlSAwiGgFAW/dAiS6JXm" crossorigin="anonymous">
 
+    {# url_for('static', ...) builds the URL to a file in the static/ folder. #}
     <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='main.css') }}">
 
+    {# `title` is passed by routes like render_template(..., title='Login');
+       pages that don't pass one get the plain site name. #}
     {% if title %}
         <title>Flask Blog - {{ title }}</title>
     {% else %}
@@ -48,6 +51,9 @@
     <main role="main" class="container">
       <div class="row">
         <div class="col-md-8">
+          {# Shows messages from flash(message, category) in the routes. The
+             category ('success', 'danger', 'info') becomes the Bootstrap alert
+             colour. Each message is shown once, then removed from the session. #}
           {% with messages = get_flashed_messages(with_categories=true) %}
             {% if messages %}
               {% for category, message in messages %}
@@ -57,9 +63,11 @@
               {% endfor %}
             {% endif %}
           {% endwith %}
+          {# Each page that does {% extends "layout.html" %} fills in this block. #}
           {% block content %}{% endblock %}
         </div>
         <div class="col-md-4">
+          {# Placeholder sidebar with static content for now. #}
           <div class="content-section">
             <h3>Our Sidebar</h3>
             <p class='text-muted'>You can put any information here you'd like.

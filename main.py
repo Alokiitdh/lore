@@ -10,9 +10,15 @@ app = Flask(__name__)
 # SECRET_KEY signs the session cookie (which is where flask-login keeps the logged-in user)
 # and the CSRF tokens in our forms. Set a real random value via the env var in production.
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-only-change-me')
+# A relative SQLite path; Flask-SQLAlchemy puts the file in the instance/ folder.
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///site.db'
 
+# `db` is created in models.py without an app, then attached here. Keeping it
+# in its own module lets forms.py and models.py import it without importing
+# main.py, which would cause a circular import.
 db.init_app(app)
+
+
 
 
 # ---------------------------------------------------------------------------
@@ -120,7 +126,8 @@ def account():
     return render_template('account.html', title='Account')
 
 
-## If we want to run our script with the python way , then we will add this
+# Runs only for `python main.py`, not when another module imports main
+# (e.g. `flask run` or a test script).
 if __name__ == '__main__':
     with app.app_context():
         # Creates any tables that don't exist yet. It does NOT alter existing
