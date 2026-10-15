@@ -109,6 +109,22 @@ def home():
         return redirect(url_for('home', page=posts.pages))
     return render_template('home.html', posts=posts)
 
+@app.route('/user/<string:username>')
+def user_posts(username):
+    # Same as home(), but only one user's posts. An unknown username gives a 404.
+    user = db.first_or_404(db.select(User).filter_by(username=username))
+    page = request.args.get('page', 1, type=int)
+    posts = db.paginate(
+        db.select(Post)
+          .filter_by(user_id=user.id)
+          .options(db.joinedload(Post.author))
+          .order_by(Post.date_posted.desc()),
+        page=page, per_page=POSTS_PER_PAGE, error_out=False,
+    )
+    if posts.pages and page > posts.pages:
+        return redirect(url_for('user_posts', username=username, page=posts.pages))
+    return render_template('user_posts.html', posts=posts, user=user, title=user.username)
+
 @app.route('/about')
 def about():
     return render_template('about.html', title = 'About')

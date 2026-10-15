@@ -1,0 +1,18 @@
+{% extends "layout.html" %}
+{# One user's posts, paginated (see user_posts() in main.py). #}
+{% from "_posts.html" import render_posts, render_pagination %}
+{% block content %}
+    <div class="content-section">
+      <div class="media align-items-center">
+        <img class="rounded-circle account-img mb-0" src="{{ avatar_url(user) }}" alt="{{ user.username }}">
+        <div class="media-body">
+          <h2 class="account-heading">{{ user.username }}</h2>
+          {# posts.total is the user's post count across all pages. #}
+          <p class="text-secondary mb-0">{{ posts.total }} post{{ '' if posts.total == 1 else 's' }}</p>
+        </div>
+      </div>
+    </div>
+    {{ render_posts(posts) }}
+    {# username is passed through so page links stay on this user's page. #}
+    {{ render_pagination(posts, 'user_posts', username=user.username) }}
+{% endblock content %}

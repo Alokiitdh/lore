@@ -41,7 +41,8 @@ class Post(db.Model):
     content = db.Column(db.Text, nullable = False )
     # Foreign key: stores the id of the user who wrote the post. 'user.id' is
     # the *table* name (lowercase), not the User class.
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable = False)
+    # index=True: user pages filter posts by this column.
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable = False, index=True)
     # `post.author` is the User who wrote it (home.html shows post.author.username).
     # Declared here rather than via backref so Post.author exists straight away,
     # which joinedload(Post.author) in main.py needs.
