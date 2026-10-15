@@ -1,4 +1,5 @@
 from flask_wtf import FlaskForm
+from flask_wtf.file import FileField, FileAllowed, FileRequired
 from wtforms import StringField, PasswordField, BooleanField, SubmitField
 from wtforms.validators import DataRequired, Length, Email, EqualTo, ValidationError
 from models import User, db
@@ -48,3 +49,10 @@ class LoginForms(FlaskForm):
     remember = BooleanField(label='Remember me')
 
     submit = SubmitField(label='Login ')
+
+class UpdatePictureForm(FlaskForm):
+    # FileAllowed only checks the file extension. save_picture() in main.py
+    # opens the file with Pillow, which also rejects files that aren't real images.
+    picture = FileField(label='Profile picture',
+                        validators=[FileRequired(), FileAllowed(['jpg', 'jpeg', 'png', 'webp'], 'Images only (jpg, png, webp)')])
+    submit = SubmitField(label='Upload')

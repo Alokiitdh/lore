@@ -3,7 +3,36 @@
    so current_user is always a real User here. #}
 {% block content %}
   <div class="content-section">
-    <h2>{{ current_user.username }}</h2>
-    <p class="text-secondary">{{ current_user.email }}</p>
+    {# multipart/form-data is required for the browser to send the file itself. #}
+    <form method="POST" action="" enctype="multipart/form-data" id="picture-form">
+      {{ form.hidden_tag() }}
+      <div class="media">
+        {# Clicking the label opens the (hidden) file picker of the input it points to. #}
+        <label for="{{ form.picture.id }}" class="avatar-upload" title="Change photo">
+          <img class="rounded-circle account-img" src="{{ avatar_url(current_user) }}" alt="{{ current_user.username }}">
+          <span class="avatar-hint">Change photo</span>
+        </label>
+        <div class="media-body">
+          <h2 class="account-heading">{{ current_user.username }}</h2>
+          <p class="text-secondary">{{ current_user.email }}</p>
+        </div>
+      </div>
+      {{ form.picture(class="d-none", accept="image/png, image/jpeg, image/webp") }}
+      {% if form.picture.errors %}
+        <div class="text-danger mb-2">
+          {% for error in form.picture.errors %}
+            <span>{{ error }}</span><br>
+          {% endfor %}
+        </div>
+      {% endif %}
+      {# Fallback for when JavaScript is off; normally choosing a file uploads it right away. #}
+      <noscript>{{ form.submit(class="btn btn-outline-info btn-sm") }}</noscript>
+    </form>
   </div>
+  <script>
+    // Upload as soon as a file is picked, so there's no extra button to press.
+    document.getElementById('{{ form.picture.id }}').addEventListener('change', function () {
+      if (this.files.length) document.getElementById('picture-form').submit();
+    });
+  </script>
 {% endblock content %}

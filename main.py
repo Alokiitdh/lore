@@ -1,9 +1,11 @@
 import os
+import secrets
 from urllib.parse import urlparse
 from flask import Flask, render_template, flash, redirect, url_for, request
 from flask_login import LoginManager, login_user, logout_user, current_user, login_required
+from PIL import Image, ImageOps, UnidentifiedImageError
 from werkzeug.security import generate_password_hash, check_password_hash
-from forms import RegistrationForms, LoginForms
+from forms import RegistrationForms, LoginForms, UpdatePictureForm
 from models import Post, User, db
 
 app = Flask(__name__)
@@ -12,6 +14,8 @@ app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-only-change-me')
 # A relative SQLite path; Flask-SQLAlchemy puts the file in the instance/ folder.
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///site.db'
+# Flask rejects bigger requests with a 413 error before our code runs (handled below).
+app.config['MAX_CONTENT_LENGTH'] = 5 * 1024 * 1024
 
 # `db` is created in models.py without an app, then attached here. Keeping it
 # in its own module lets forms.py and models.py import it without importing
@@ -37,6 +41,45 @@ def load_user(user_id):
     # password or full object). On every request it calls this function to
     # turn that id back into a User row from the database.
     return db.session.get(User, int(user_id))
+
+
+# ---------------------------------------------------------------------------
+# Profile pictures
+# ---------------------------------------------------------------------------
+PROFILE_PICS_DIR = os.path.join(app.root_path, 'static', 'profile_pics')
+DEFAULT_PICTURE = 'default.jpg'   # the value models.py stores for users without a photo
+
+
+def avatar_url(user):
+    # Users without an uploaded photo get the blank-circle SVG. Mapping the
+    # stored 'default.jpg' here means existing rows need no database change.
+    if user.image_file == DEFAULT_PICTURE:
+        return url_for('static', filename='profile_pics/default.svg')
+    return url_for('static', filename='profile_pics/' + user.image_file)
+
+# Makes avatar_url() callable from every template.
+app.jinja_env.globals['avatar_url'] = avatar_url
+
+
+def save_picture(form_picture):
+    """Crop/resize the upload to a 250x250 JPEG and return its new filename.
+
+    Raises UnidentifiedImageError if the file isn't a real image.
+    """
+    image = Image.open(form_picture)
+    image = ImageOps.exif_transpose(image)                  # respect phone camera rotation
+    image = ImageOps.fit(image, (250, 250)).convert('RGB')  # centre-crop to a square; JPEG has no alpha
+    # A random name avoids clashes between users and stops the browser
+    # showing a cached old picture. 16 hex chars + '.jpg' fits String(20).
+    filename = secrets.token_hex(8) + '.jpg'
+    image.save(os.path.join(PROFILE_PICS_DIR, filename), quality=90)
+    return filename
+
+
+@app.errorhandler(413)
+def file_too_large(error):
+    flash('Image too large (max 5 MB).', 'danger')
+    return redirect(url_for('account'))
 
 
 # ---------------------------------------------------------------------------
@@ -120,10 +163,31 @@ def logout():
     logout_user()
     return redirect(url_for('home'))
 
-@app.route('/account')
+@app.route('/account', methods=['GET', 'POST'])
 @login_required   # logged-out visitors are redirected to login_view ('login') with ?next=/account
 def account():
-    return render_template('account.html', title='Account')
+    form = UpdatePictureForm()
+    if form.validate_on_submit():
+        try:
+            new_file = save_picture(form.picture.data)
+        except UnidentifiedImageError:
+            flash('That file is not a valid image.', 'danger')
+            return redirect(url_for('account'))
+
+        old_file = current_user.image_file
+        current_user.image_file = new_file
+        db.session.commit()
+
+        # Remove the replaced upload so old pictures don't pile up (never the default).
+        if old_file != DEFAULT_PICTURE:
+            old_path = os.path.join(PROFILE_PICS_DIR, old_file)
+            if os.path.exists(old_path):
+                os.remove(old_path)
+
+        flash('Your profile picture has been updated.', 'success')
+        # Redirect after POST so refreshing the page doesn't re-upload.
+        return redirect(url_for('account'))
+    return render_template('account.html', title='Account', form=form)
 
 
 # Runs only for `python main.py`, not when another module imports main

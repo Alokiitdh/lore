@@ -48,6 +48,7 @@ a.article-title:hover {
 .article-img {
   height: 65px;
   width: 65px;
+  object-fit: cover;
   margin-right: 16px;
 }
 
@@ -71,8 +72,37 @@ a.article-title:hover {
 .account-img {
   height: 125px;
   width: 125px;
+  object-fit: cover;
   margin-right: 20px;
   margin-bottom: 16px;
+}
+
+/* Clickable avatar on the account page: shows a "Change photo" hint on hover. */
+.avatar-upload {
+  position: relative;
+  cursor: pointer;
+  margin: 0;
+}
+
+.avatar-upload .avatar-hint {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 125px;
+  height: 125px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.5);
+  color: #fff;
+  font-size: 0.9rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.avatar-upload:hover .avatar-hint {
+  opacity: 1;
 }
 
 .account-heading {
