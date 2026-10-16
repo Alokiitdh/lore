@@ -1,6 +1,7 @@
 {% extends "layout.html" %}
 {# Only reachable when logged in (@login_required on the /account route),
    so current_user is always a real User here. #}
+{% from "_form.html" import render_field %}
 {% block content %}
   <div class="content-section">
     {# multipart/form-data is required for the browser to send the file itself. #}
@@ -27,6 +28,24 @@
       {% endif %}
       {# Fallback for when JavaScript is off; normally choosing a file uploads it right away. #}
       <noscript>{{ form.submit(class="btn btn-outline-info btn-sm") }}</noscript>
+    </form>
+  </div>
+
+  {# Second form on this page; account() tells them apart by its `update` button. #}
+  <div class="content-section">
+    <form method="POST" action="">
+      {{ account_form.hidden_tag() }}
+      <fieldset class="form-group">
+        <legend class="border-bottom mb-4">Account Settings</legend>
+        {{ render_field(account_form.email) }}
+        <small class="form-text text-muted mb-2">Leave the new password boxes empty to keep your current password.</small>
+        {{ render_field(account_form.new_password, autocomplete="new-password") }}
+        {{ render_field(account_form.confirm_password, autocomplete="new-password") }}
+        {{ render_field(account_form.current_password, autocomplete="current-password") }}
+      </fieldset>
+      <div class="form-group">
+        {{ account_form.update(class="btn btn-outline-info") }}
+      </div>
     </form>
   </div>
   <script>

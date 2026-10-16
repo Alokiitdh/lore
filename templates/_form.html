@@ -1,0 +1,19 @@
+{# One labelled form field, using the same error pattern as register.html:
+   if validation failed, add Bootstrap's is-invalid class (red border) and
+   list the errors below it; otherwise render the plain input.
+   Import with: {% from "_form.html" import render_field %} #}
+{% macro render_field(field) %}
+    <div class="form-group">
+        {{ field.label(class="form-control-label") }}
+        {% if field.errors %}
+            {{ field(class="form-control form-control-lg is-invalid", **kwargs) }}
+            <div class="invalid-feedback">
+                {% for error in field.errors %}
+                    <span>{{ error }}</span>
+                {% endfor %}
+            </div>
+        {% else %}
+            {{ field(class="form-control form-control-lg", **kwargs) }}
+        {% endif %}
+    </div>
+{% endmacro %}

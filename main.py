@@ -1,11 +1,15 @@
 import os
 import secrets
+import smtplib
+from email.message import EmailMessage
 from urllib.parse import urlparse
 from flask import Flask, render_template, flash, redirect, url_for, request
 from flask_login import LoginManager, login_user, logout_user, current_user, login_required
+from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 from PIL import Image, ImageOps, UnidentifiedImageError
 from werkzeug.security import generate_password_hash, check_password_hash
-from forms import RegistrationForms, LoginForms, UpdatePictureForm
+from forms import (RegistrationForms, LoginForms, UpdatePictureForm, UpdateAccountForm,
+                   RequestResetForm, ResetPasswordForm)
 from models import Post, User, db
 
 app = Flask(__name__)
@@ -197,7 +201,24 @@ def logout():
 @login_required   # logged-out visitors are redirected to login_view ('login') with ?next=/account
 def account():
     form = UpdatePictureForm()
-    if form.validate_on_submit():
+    # prefix='account' gives this form's fields distinct names/ids (account-email, ...)
+    # so the two forms on the page don't clash.
+    account_form = UpdateAccountForm(prefix='account')
+
+    # Both forms post to /account. Only the settings form sends its `update`
+    # button; the picture form is submitted by JS without a button.
+    if account_form.update.data:
+        if account_form.validate_on_submit():
+            if not check_password_hash(current_user.password, account_form.current_password.data):
+                account_form.current_password.errors.append('Current password is incorrect')
+            else:
+                current_user.email = account_form.email.data
+                if account_form.new_password.data:
+                    current_user.password = generate_password_hash(account_form.new_password.data)
+                db.session.commit()
+                flash('Your account has been updated.', 'success')
+                return redirect(url_for('account'))
+    elif form.validate_on_submit():
         try:
             new_file = save_picture(form.picture.data)
         except UnidentifiedImageError:
@@ -217,7 +238,98 @@ def account():
         flash('Your profile picture has been updated.', 'success')
         # Redirect after POST so refreshing the page doesn't re-upload.
         return redirect(url_for('account'))
-    return render_template('account.html', title='Account', form=form)
+
+    # Pre-fill the email box unless we're re-showing what the user just typed.
+    if not account_form.update.data:
+        account_form.email.data = current_user.email
+    return render_template('account.html', title='Account', form=form, account_form=account_form)
+
+
+# ---------------------------------------------------------------------------
+# Password reset ("Forgot password?")
+# ---------------------------------------------------------------------------
+RESET_TOKEN_MAX_AGE = 30 * 60   # seconds a reset link stays valid
+
+
+def _reset_serializer():
+    # Signs tokens with SECRET_KEY, so they can't be forged or edited. The salt
+    # keeps these tokens from being valid for any other signed-data purpose.
+    return URLSafeTimedSerializer(app.config['SECRET_KEY'], salt='password-reset')
+
+
+def get_reset_token(user):
+    # Including the end of the current password hash makes the link single-use:
+    # once the password changes, the hash changes and old links stop matching.
+    return _reset_serializer().dumps({'id': user.id, 'pw': user.password[-12:]})
+
+
+def verify_reset_token(token):
+    """Return the User for a valid token, or None if it's expired, tampered or already used."""
+    try:
+        data = _reset_serializer().loads(token, max_age=RESET_TOKEN_MAX_AGE)
+    except (SignatureExpired, BadSignature):
+        return None
+    user = db.session.get(User, data.get('id'))
+    if user is None or user.password[-12:] != data.get('pw'):
+        return None
+    return user
+
+
+def send_reset_email(user):
+    link = url_for('reset_token', token=get_reset_token(user), _external=True)
+    body = (f'Hi {user.username},\n\n'
+            f'To reset your Lore password, open this link (valid for 30 minutes):\n{link}\n\n'
+            "If you didn't ask for this, just ignore this email; your password won't change.\n")
+
+    # Without mail settings (local development), print the link instead of emailing it.
+    if not os.environ.get('MAIL_SERVER'):
+        app.logger.warning('DEV MODE, no MAIL_SERVER set. Password reset link for %s:\n%s', user.email, link)
+        return
+
+    msg = EmailMessage()
+    msg['Subject'] = 'Reset your Lore password'
+    msg['From'] = os.environ.get('MAIL_SENDER', os.environ.get('MAIL_USERNAME'))
+    msg['To'] = user.email
+    msg.set_content(body)
+    with smtplib.SMTP(os.environ['MAIL_SERVER'], int(os.environ.get('MAIL_PORT', 587))) as smtp:
+        smtp.starttls()
+        smtp.login(os.environ['MAIL_USERNAME'], os.environ['MAIL_PASSWORD'])
+        smtp.send_message(msg)
+
+
+@app.route('/reset_password', methods=['GET', 'POST'])
+def reset_request():
+    if current_user.is_authenticated:
+        return redirect(url_for('home'))
+    form = RequestResetForm()
+    if form.validate_on_submit():
+        user = db.session.execute(
+            db.select(User).filter_by(email=form.email.data)
+        ).scalar_one_or_none()
+        if user:
+            send_reset_email(user)
+        # Same message whether or not the account exists, so this page
+        # can't be used to find out who has an account.
+        flash('If an account exists for that email, a reset link has been sent.', 'info')
+        return redirect(url_for('login'))
+    return render_template('reset_request.html', title='Reset Password', form=form)
+
+
+@app.route('/reset_password/<token>', methods=['GET', 'POST'])
+def reset_token(token):
+    if current_user.is_authenticated:
+        return redirect(url_for('home'))
+    user = verify_reset_token(token)
+    if user is None:
+        flash('That reset link is invalid or has expired. Please request a new one.', 'warning')
+        return redirect(url_for('reset_request'))
+    form = ResetPasswordForm()
+    if form.validate_on_submit():
+        user.password = generate_password_hash(form.password.data)
+        db.session.commit()
+        flash('Your password has been reset. You can now log in.', 'success')
+        return redirect(url_for('login'))
+    return render_template('reset_token.html', title='Reset Password', form=form)
 
 
 # Runs only for `python main.py`, not when another module imports main
