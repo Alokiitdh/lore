@@ -1,7 +1,8 @@
 from flask_wtf import FlaskForm
 from flask_wtf.file import FileField, FileAllowed, FileRequired
 from wtforms import StringField, PasswordField, BooleanField, SubmitField
-from wtforms.validators import DataRequired, Length, Email, EqualTo, ValidationError
+from wtforms.validators import DataRequired, Length, Email, EqualTo, ValidationError, Optional
+from flask_login import current_user
 from models import User, db
 
 # FlaskForm (from Flask-WTF) adds CSRF protection on top of plain WTForms:
@@ -56,3 +57,40 @@ class UpdatePictureForm(FlaskForm):
     picture = FileField(label='Profile picture',
                         validators=[FileRequired(), FileAllowed(['jpg', 'jpeg', 'png', 'webp'], 'Images only (jpg, png, webp)')])
     submit = SubmitField(label='Upload')
+
+class UpdateAccountForm(FlaskForm):
+    email = StringField(label='Email',
+                        validators=[DataRequired(), Email()])
+    # Optional(): leave both password boxes empty to keep the current password.
+    new_password = PasswordField(label='New Password',
+                                 validators=[Optional(), Length(min=6)])
+    confirm_password = PasswordField(label='Confirm New Password',
+                                     validators=[EqualTo('new_password', message='Passwords must match')])
+    # Required for any change, so someone at an unlocked, logged-in computer
+    # can't take over the account. Checked against the hash in the route.
+    current_password = PasswordField(label='Current Password',
+                                     validators=[DataRequired()])
+    # Named `update` (not `submit`) so account() can tell this form apart
+    # from the picture form on the same page.
+    update = SubmitField(label='Save Changes')
+
+    def validate_email(self, email):
+        if email.data == current_user.email:
+            return
+        user = db.session.execute(db.select(User).filter_by(email=email.data)).scalar_one_or_none()
+        if user:
+            raise ValidationError('The Email is already registered')
+
+class RequestResetForm(FlaskForm):
+    # No "does this email exist?" check here, on purpose: the route shows the
+    # same message either way so the form can't be used to discover accounts.
+    email = StringField(label='Email',
+                        validators=[DataRequired(), Email()])
+    submit = SubmitField(label='Send Reset Link')
+
+class ResetPasswordForm(FlaskForm):
+    password = PasswordField(label='New Password',
+                             validators=[DataRequired(), Length(min=6)])
+    confirm_password = PasswordField(label='Confirm New Password',
+                                     validators=[DataRequired(), EqualTo('password', message='Passwords must match')])
+    submit = SubmitField(label='Reset Password')
