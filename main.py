@@ -3,14 +3,21 @@ import secrets
 import smtplib
 from email.message import EmailMessage
 from urllib.parse import urlparse
-from flask import Flask, render_template, flash, redirect, url_for, request
+from dotenv import load_dotenv
+from flask import Flask, render_template, flash, redirect, url_for, request, abort
 from flask_login import LoginManager, login_user, logout_user, current_user, login_required
 from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
+from markupsafe import Markup
 from PIL import Image, ImageOps, UnidentifiedImageError
 from werkzeug.security import generate_password_hash, check_password_hash
-from forms import (RegistrationForms, LoginForms, UpdatePictureForm, UpdateAccountForm,
+from forms import (RegistrationForms, LoginForms, UpdatePictureForm, UpdateAccountForm, PostForm, DeletePostForm,
                    RequestResetForm, ResetPasswordForm)
 from models import Post, User, db
+
+# Reads KEY=value lines from the .env file next to this script into
+# os.environ (SECRET_KEY, MAIL_* ...). .env is git-ignored because it holds
+# secrets; .env.example shows which keys it should have.
+load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env'))
 
 app = Flask(__name__)
 # SECRET_KEY signs the session cookie (which is where flask-login keeps the logged-in user)
@@ -87,6 +94,40 @@ def file_too_large(error):
 
 
 # ---------------------------------------------------------------------------
+# Custom error pages
+# ---------------------------------------------------------------------------
+# Flask calls these instead of showing its plain default error pages. The
+# second value in each return keeps the real status code; without it the
+# browser would get "200 OK" for an error page.
+def error_page(code, heading, message):
+    return render_template('errors/error.html', title=heading,
+                           code=code, heading=heading, message=message), code
+
+
+@app.errorhandler(403)
+def forbidden(error):
+    # e.g. trying to update or delete someone else's post
+    return error_page(403, "You don't have permission to do that",
+                      'You can only change or delete your own posts.')
+
+
+@app.errorhandler(404)
+def page_not_found(error):
+    # unknown URLs, and posts or users that don't exist
+    return error_page(404, 'Page not found',
+                      "That page doesn't exist. It may have been deleted, or the link may be wrong.")
+
+
+@app.errorhandler(500)
+def internal_error(error):
+    # Any unhandled exception. A failed database write leaves the session in
+    # a broken state, so undo it before rendering (layout.html uses current_user).
+    db.session.rollback()
+    return error_page(500, 'Something went wrong',
+                      "That's a problem on our side, not yours. Please try again in a moment.")
+
+
+# ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
 POSTS_PER_PAGE = 8
@@ -128,6 +169,69 @@ def user_posts(username):
     if posts.pages and page > posts.pages:
         return redirect(url_for('user_posts', username=username, page=posts.pages))
     return render_template('user_posts.html', posts=posts, user=user, title=user.username)
+
+
+# ---------------------------------------------------------------------------
+# Single posts: view, create, update, delete
+# ---------------------------------------------------------------------------
+def get_own_post_or_403(post_id):
+    # Only the author may change or delete a post. Anyone else gets
+    # 403 Forbidden, even if they type the URL in by hand.
+    post = db.get_or_404(Post, post_id)
+    if post.author != current_user:
+        abort(403)
+    return post
+
+
+@app.route('/post/new', methods=['GET', 'POST'])
+@login_required
+def new_post():
+    form = PostForm()
+    if form.validate_on_submit():
+        post = Post(title=form.title.data, content=form.content.data, author=current_user)
+        db.session.add(post)
+        db.session.commit()
+        flash('Your post has been created.', 'success')
+        return redirect(url_for('post', post_id=post.id))
+    return render_template('create_post.html', title='New Post', form=form, legend='New Post')
+
+
+@app.route('/post/<int:post_id>')
+def post(post_id):
+    post = db.get_or_404(Post, post_id)
+    return render_template('post.html', title=post.title, post=post, delete_form=DeletePostForm())
+
+
+@app.route('/post/<int:post_id>/update', methods=['GET', 'POST'])
+@login_required
+def update_post(post_id):
+    post = get_own_post_or_403(post_id)
+    form = PostForm()
+    if form.validate_on_submit():
+        post.title = form.title.data
+        post.content = form.content.data
+        db.session.commit()
+        flash('Your post has been updated.', 'success')
+        return redirect(url_for('post', post_id=post.id))
+    if request.method == 'GET':
+        # Pre-fill the form with the current text.
+        form.title.data = post.title
+        form.content.data = post.content
+    form.submit.label.text = 'Update'
+    return render_template('create_post.html', title='Update Post', form=form, legend='Update Post')
+
+
+# POST only: deleting must never happen just by visiting a link.
+@app.route('/post/<int:post_id>/delete', methods=['POST'])
+@login_required
+def delete_post(post_id):
+    post = get_own_post_or_403(post_id)
+    if not DeletePostForm().validate_on_submit():   # missing/invalid CSRF token
+        abort(400)
+    db.session.delete(post)
+    db.session.commit()
+    flash('Your post has been deleted.', 'success')
+    return redirect(url_for('home'))
 
 @app.route('/about')
 def about():
@@ -275,26 +379,32 @@ def verify_reset_token(token):
     return user
 
 
-def send_reset_email(user):
-    link = url_for('reset_token', token=get_reset_token(user), _external=True)
-    body = (f'Hi {user.username},\n\n'
-            f'To reset your Lore password, open this link (valid for 30 minutes):\n{link}\n\n'
-            "If you didn't ask for this, just ignore this email; your password won't change.\n")
+def mail_configured():
+    # All three are needed to send. A half-filled .env (e.g. a blank
+    # MAIL_PASSWORD) counts as "not configured" and uses dev mode instead.
+    return all(os.environ.get(key) for key in ('MAIL_SERVER', 'MAIL_USERNAME', 'MAIL_PASSWORD'))
 
-    # Without mail settings (local development), print the link instead of emailing it.
-    if not os.environ.get('MAIL_SERVER'):
-        app.logger.warning('DEV MODE, no MAIL_SERVER set. Password reset link for %s:\n%s', user.email, link)
-        return
 
+def send_reset_email(user, link):
+    """Email the reset link. Returns True if it was sent, False if sending failed."""
     msg = EmailMessage()
     msg['Subject'] = 'Reset your Lore password'
-    msg['From'] = os.environ.get('MAIL_SENDER', os.environ.get('MAIL_USERNAME'))
+    msg['From'] = os.environ.get('MAIL_SENDER') or os.environ['MAIL_USERNAME']
     msg['To'] = user.email
-    msg.set_content(body)
-    with smtplib.SMTP(os.environ['MAIL_SERVER'], int(os.environ.get('MAIL_PORT', 587))) as smtp:
-        smtp.starttls()
-        smtp.login(os.environ['MAIL_USERNAME'], os.environ['MAIL_PASSWORD'])
-        smtp.send_message(msg)
+    msg.set_content(f'Hi {user.username},\n\n'
+                    f'To reset your Lore password, open this link (valid for 30 minutes):\n{link}\n\n'
+                    "If you didn't ask for this, just ignore this email; your password won't change.\n")
+    try:
+        with smtplib.SMTP(os.environ['MAIL_SERVER'], int(os.environ.get('MAIL_PORT') or 587), timeout=15) as smtp:
+            smtp.starttls()
+            smtp.login(os.environ['MAIL_USERNAME'], os.environ['MAIL_PASSWORD'])
+            smtp.send_message(msg)
+    except (smtplib.SMTPException, OSError):
+        # Wrong app password, no internet, etc. The full error goes to the
+        # terminal; the user just sees a friendly message.
+        app.logger.exception('Could not send password reset email to %s', user.email)
+        return False
+    return True
 
 
 @app.route('/reset_password', methods=['GET', 'POST'])
@@ -307,7 +417,18 @@ def reset_request():
             db.select(User).filter_by(email=form.email.data)
         ).scalar_one_or_none()
         if user:
-            send_reset_email(user)
+            link = url_for('reset_token', token=get_reset_token(user), _external=True)
+            if not mail_configured():
+                # Dev mode (no mail settings in .env): show the link on the page
+                # and in the terminal instead of emailing it. Never happens once
+                # mail is configured, so a real site never puts links on screen.
+                app.logger.warning('DEV MODE, email not configured. Reset link for %s:\n%s', user.email, link)
+                flash(Markup('Email is not set up yet (dev mode). '
+                             '<a href="{}">Click here to reset your password</a>.').format(link), 'warning')
+                return redirect(url_for('login'))
+            if not send_reset_email(user, link):
+                flash("We couldn't send the email right now. Please try again later.", 'danger')
+                return redirect(url_for('reset_request'))
         # Same message whether or not the account exists, so this page
         # can't be used to find out who has an account.
         flash('If an account exists for that email, a reset link has been sent.', 'info')
