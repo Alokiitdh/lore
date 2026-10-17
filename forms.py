@@ -1,6 +1,6 @@
 from flask_wtf import FlaskForm
 from flask_wtf.file import FileField, FileAllowed, FileRequired
-from wtforms import StringField, PasswordField, BooleanField, SubmitField
+from wtforms import StringField, PasswordField, BooleanField, SubmitField, TextAreaField
 from wtforms.validators import DataRequired, Length, Email, EqualTo, ValidationError, Optional
 from flask_login import current_user
 from models import User, db
@@ -87,6 +87,19 @@ class RequestResetForm(FlaskForm):
     email = StringField(label='Email',
                         validators=[DataRequired(), Email()])
     submit = SubmitField(label='Send Reset Link')
+
+class PostForm(FlaskForm):
+    # Used for both creating and updating a post.
+    title = StringField(label='Title',
+                        validators=[DataRequired(), Length(max=100)])   # max matches String(100) in models.py
+    content = TextAreaField(label='Content',
+                            validators=[DataRequired()])
+    submit = SubmitField(label='Post')
+
+class DeletePostForm(FlaskForm):
+    # No fields: it exists so the delete button sends a CSRF token, which stops
+    # other sites from tricking a logged-in user into deleting their posts.
+    submit = SubmitField(label='Delete')
 
 class ResetPasswordForm(FlaskForm):
     password = PasswordField(label='New Password',

@@ -1,0 +1,11 @@
+{% extends "layout.html" %}
+{# Shared by the 403, 404 and 500 handlers in main.py; each passes its own
+   code, heading and message. #}
+{% block content %}
+    <div class="content-section text-center py-5">
+        <h1 class="display-4 text-muted">{{ code }}</h1>
+        <h2 class="mb-3">{{ heading }}</h2>
+        <p class="text-secondary">{{ message }}</p>
+        <a class="btn btn-outline-info mt-2" href="{{ url_for('home') }}">Back to Home</a>
+    </div>
+{% endblock content %}
